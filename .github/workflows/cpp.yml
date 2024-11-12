@@ -18,17 +18,17 @@ jobs:
       fail-fast: false
       matrix:
         config:
-        # - {
-        #     name: "Windows Latest MSVC",
-        #     os: windows-latest,
-        #     artifact: "windows_msvc.7z",
-        #     build_type: "Release",
-        #     cc: "cl",
-        #     cxx: "cl",
-        #     environment_script: "C:/Program Files (x86)/Microsoft Visual Studio/2022/Enterprise/VC/Auxiliary/Build/vcvars64.bat",
-        #     archiver: "7z a",
-        #     generators: "Visual Studio 17 2022"
-        #   }
+        - {
+            name: "Windows Latest MSVC",
+            os: windows-latest,
+            artifact: "windows_msvc.7z",
+            build_type: "Release",
+            cc: "cl",
+            cxx: "cl",
+            environment_script: "C:/Program Files (x86)/Microsoft Visual Studio/2022/Enterprise/VC/Auxiliary/Build/vcvars64.bat",
+            archiver: "7z a",
+            generators: "Visual Studio 17 2022"
+          }
         # - {
         #     name: "Windows Latest MinGW",
         #     os: windows-latest,
@@ -84,11 +84,14 @@ jobs:
           choco install ninja cmake
           ninja --version
           cmake --version
-      # - name: Install HDF5 on Windows
-      #   if: startsWith(matrix.config.os, 'windows')
-      #   run: |
-      #     https://support.hdfgroup.org/ftp/HDF5/releases/hdf5-1.12/hdf5-1.12.1/src/CMake-hdf5-1.12.1.zip
-
+      - name: Install HDF5 on Windows
+        if: startsWith(matrix.config.os, 'windows')
+        run: |
+          Invoke-WebRequest -Uri https://support.hdfgroup.org/ftp/HDF5/releases/hdf5-1.12/hdf5-1.12.1/src/CMake-hdf5-1.12.1.zip -OutFile "CMake-hdf5-1.12.1.zip"
+          Expand-Archive -Path "CMake-hdf5-1.12.1.zip" -DestinationPath .
+          cd CMake-hdf5-1.12.1
+          ctest -S HDF5config.cmake,BUILD_GENERATOR=VS202264 -C Release -V -O hdf5.log
+          Expand-Archive -Path "HDF5-1.12.1-win64.zip" -DestinationPath .
       - name: Install dependencies on Ubuntu
         if: startsWith(matrix.config.name, 'Ubuntu Latest GCC')
         run: |
