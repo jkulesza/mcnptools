@@ -7,7 +7,7 @@ on:
   pull_request:
     branches: [ "add/github_action_matrix" ]
 
-# A workflow run is made up of one or more jobs that can run sequentially or in parallel
+# A workflow run is made up of one or more jobs that can run sequentially or in parallel, rebuild
 jobs:
   # This workflow contains a single job called "build"
   build:
@@ -84,14 +84,36 @@ jobs:
           choco install ninja cmake
           ninja --version
           cmake --version
+      - name: Set up Python on Windows
+        if: startsWith(matrix.config.os, 'windows')
+        uses: actions/setup-python@v4
+        with:
+            python-version: '3.12'
+      - name: Configure Python on Windows
+        if: startsWith(matrix.config.os, 'windows')
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install setuptools wheel
       - name: Install HDF5 on Windows
         if: startsWith(matrix.config.os, 'windows')
         run: |
           Invoke-WebRequest -Uri https://support.hdfgroup.org/ftp/HDF5/releases/hdf5-1.12/hdf5-1.12.1/src/CMake-hdf5-1.12.1.zip -OutFile "CMake-hdf5-1.12.1.zip"
           Expand-Archive -Path "CMake-hdf5-1.12.1.zip" -DestinationPath .
           cd CMake-hdf5-1.12.1
+          ..\.github\workflows\PatchHDF5.bat
           ctest -S HDF5config.cmake,BUILD_GENERATOR=VS202264 -C Release -V -O hdf5.log
           Expand-Archive -Path "HDF5-1.12.1-win64.zip" -DestinationPath .
+          cd ..
+          echo ${{github.workspace}}/CMake-hdf5-1.12.1/HDF5-1.12.1-win64 >> $Env:GITHUB_PATH
+          echo ${{github.workspace}}/CMake-hdf5-1.12.1/HDF5-1.12.1-win64/bin >> $Env:GITHUB_PATH
+          echo ${{github.workspace}}/CMake-hdf5-1.12.1/HDF5-1.12.1-win64/share >> $Env:GITHUB_PATH
+          echo ${{github.workspace}}/CMake-hdf5-1.12.1/HDF5-1.12.1-win64/lib >> $Env:GITHUB_PATH
+          echo ${{github.workspace}}/CMake-hdf5-1.12.1/HDF5-1.12.1-win64 >> $GITHUB_PATH
+          echo ${{github.workspace}}/CMake-hdf5-1.12.1/HDF5-1.12.1-win64/bin >> $GITHUB_PATH
+          echo ${{github.workspace}}/CMake-hdf5-1.12.1/HDF5-1.12.1-win64/share >> $GITHUB_PATH
+          echo ${{github.workspace}}/CMake-hdf5-1.12.1/HDF5-1.12.1-win64/lib >> $GITHUB_PATH
+          echo $Env:GITHUB_PATH
+          echo $GITHUB_PATH
       - name: Install dependencies on Ubuntu
         if: startsWith(matrix.config.name, 'Ubuntu Latest GCC')
         run: |
@@ -105,14 +127,17 @@ jobs:
       - name: Install dependencies on macOS
         if: startsWith(matrix.config.os, 'macos')
         run: |
+          brew update
           brew install hdf5 libtiff cmake ninja
+          brew reinstall libtiff
           python -m pip install --upgrade pip setuptools wheel
           cmake --version
           gcc --version
           ninja --version
           python --version
 
-      - name: Configure
+      - name: Configure Linux
+        if: startsWith(matrix.config.name, 'Ubuntu Latest GCC')
         shell: bash
         run: |
           pwd
@@ -124,22 +149,68 @@ jobs:
             -D mcnptools.python=ON \
             -D mcnptools.python_install=Prefix
 
-      - name: Build
+      - name: Configure MacOS
+        if: startsWith(matrix.config.os, 'macos')
+        shell: bash
+        run: |
+          pwd
+          cmake -G "Ninja" \
+            -B ${{github.workspace}}/build \
+            -D CMAKE_BUILD_TYPE=${{matrix.config.build_type}} \
+            -D CMAKE_INSTALL_PREFIX=${{github.workspace}}/build/install \
+            -D mcnptools.cpack=ON \
+            -D mcnptools.python=ON \
+            -D mcnptools.python_install=Prefix
+
+      - name: Configure Windows
+        if: startsWith(matrix.config.os, 'windows')
+        run: |
+          cmake -B ${{github.workspace}}/build -D CMAKE_BUILD_TYPE=${{matrix.config.build_type}} -D CMAKE_INSTALL_PREFIX=${{github.workspace}}/build/install -DHDF5_ROOT=${{github.workspace}}/CMake-hdf5-1.12.1/HDF5-1.12.1-win64 -D mcnptools.cpack=ON -D mcnptools.python=ON -D mcnptools.python_install=Prefix
+
+      - name: Build Linux
+        if: startsWith(matrix.config.name, 'Ubuntu Latest GCC')
         working-directory: ${{github.workspace}}/build
         shell: bash
         run: cmake --build . --config ${{matrix.config.build_type}} -- -j
+
+      - name: Build MacOS
+        if: startsWith(matrix.config.os, 'macos')
+        working-directory: ${{github.workspace}}/build
+        shell: bash
+        run: cmake --build . --config ${{matrix.config.build_type}} -- -j$(sysctl -n hw.ncpu)
+
+      - name: Build Windows
+        if: startsWith(matrix.config.os, 'windows')
+        working-directory: ${{github.workspace}}/build
+        run: cmake --build . --config ${{matrix.config.build_type}}
 
       - name: Build Wheel
         working-directory: ${{github.workspace}}/build/python
         run: python setup${{matrix.config.build_type}}.py bdist_wheel
 
-      - name: Test C++
+      - name: Test C++ Linux
+        if: startsWith(matrix.config.name, 'Ubuntu Latest GCC')
         working-directory: ${{github.workspace}}/build
         # Execute tests defined by the CMake configuration.
         # See https://cmake.org/cmake/help/latest/manual/ctest.1.html for more detail
         run: |
-          ctest -C ${{matrix.config.BUILD_TYPE}}
+          ctest -C ${{matrix.config.BUILD_TYPE}} --output-on-failure
 
+      - name: Test C++ macOS
+        if: startsWith(matrix.config.os, 'macos')
+        working-directory: ${{github.workspace}}/build
+        # Execute tests defined by the CMake configuration.
+        # See https://cmake.org/cmake/help/latest/manual/ctest.1.html for more detail
+        run: |
+          ctest -C ${{matrix.config.BUILD_TYPE}} --output-on-failure
+
+      - name: Test C++ Windows
+        if: startsWith(matrix.config.os, 'windows')
+        working-directory: ${{github.workspace}}/build
+        # Execute tests defined by the CMake configuration.
+        # See https://cmake.org/cmake/help/latest/manual/ctest.1.html for more detail
+        run: |
+          ctest -C ${{matrix.config.BUILD_TYPE}} --output-on-failure --exclude-from-file ../TestExclusion.txt
       # - name: Test: Python
       #   working-directory: ${{github.workspace}}/build
       #   # Execute tests defined by the CMake configuration.
@@ -148,9 +219,23 @@ jobs:
       #     which python
       #     cmake --build . --config Release -t pytest
 
-      - name: Install Strip
+      - name: Install Strip Linux
+        if: startsWith(matrix.config.name, 'Ubuntu Latest GCC')
         working-directory: ${{github.workspace}}/build
         shell: bash
+        run: cmake --install . --config ${{matrix.config.BUILD_TYPE}} --strip
+
+      - name: Install Strip macOS
+        if: startsWith(matrix.config.os, 'macos')
+        working-directory: ${{github.workspace}}/build
+        shell: bash
+        run: |
+            chmod 777 /opt/homebrew/opt/libtiff/lib/*
+            cmake --install . --config ${{matrix.config.BUILD_TYPE}} --strip --verbose
+
+      - name: Install Strip Windows
+        if: startsWith(matrix.config.os, 'windows')
+        working-directory: ${{github.workspace}}/build
         run: cmake --install . --config ${{matrix.config.BUILD_TYPE}} --strip
 
       - name: Pack
@@ -159,11 +244,25 @@ jobs:
         # See https://cmake.org/cmake/help/latest/manual/ctest.1.html for more detail
         run: cpack -G ZIP
 
+      - name: Print directories on install failure
+        if: failure()
+        run: |
+            echo "Install failed. Printing directory contents for debugging."
+            ls -la ${{github.workspace}}/build/install/
+            ls -la ${{github.workspace}}/build/install/Frameworks/
+            ls -la ${{github.workspace}}/build/install/bin/
+            ls -la /opt/homebrew/opt/
+            ls -la /opt/homebrew/opt/libtiff/lib/
+            echo "This fails."
+            otool -L ${{github.workspace}}/build/install/Frameworks/libtiff.6.dylib
+            echo "This works"
+            otool -L ${{github.workspace}}/build/install/Frameworks/libjpeg.8.3.2.dylib
+
       - name: Capture artifacts
         uses: actions/upload-artifact@v4
 
         with:
-            name: mcnptools
+            name: ${{ matrix.config.artifact }}
             path: |
                 ${{github.workspace}}/build/*.zip
                 ${{github.workspace}}/build/python/dist/*.whl
