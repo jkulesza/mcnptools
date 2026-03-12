@@ -1,0 +1,293 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+    tags: ['v*.*.*']
+  pull_request:
+    branches: [main]
+
+env:
+  # softprops/action-gh-release@v2 does not yet have a Node.js 24 release.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Build native executables for each platform
+  # ---------------------------------------------------------------------------
+  build-executables:
+    name: Executables / ${{ matrix.os-tag }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        include:
+          - os: ubuntu-latest
+            os-tag: linux-x86_64
+          - os: macos-latest
+            os-tag: macos-arm64
+          - os: macos-latest
+            os-tag: macos-x86_64
+          - os: windows-latest
+            os-tag: windows-x86_64
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Get version
+        shell: bash
+        run: |
+          VERSION=$(grep -m1 'project(mcnptools VERSION' CMakeLists.txt \
+            | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+
+      - name: Install HDF5 (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libhdf5-dev
+
+      - name: Install HDF5 (macOS arm64)
+        if: matrix.os-tag == 'macos-arm64'
+        run: |
+          brew install hdf5
+          echo "HDF5_ROOT=$(brew --prefix hdf5)" >> $GITHUB_ENV
+
+      - name: Install HDF5 and libtiff (macOS x86_64)
+        if: matrix.os-tag == 'macos-x86_64'
+        run: |
+          arch -x86_64 /bin/bash -c \
+            "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+          arch -x86_64 /usr/local/bin/brew install hdf5 libtiff
+          echo "HDF5_ROOT=/usr/local/opt/hdf5" >> $GITHUB_ENV
+          echo "CMAKE_PREFIX_PATH=/usr/local" >> $GITHUB_ENV
+
+      - name: Install HDF5 (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          & "$env:CONDA\Scripts\conda.exe" install -y -c conda-forge hdf5
+          $hdf5_root = "$env:CONDA\Library" -replace '\\', '/'
+          echo "HDF5_ROOT=$hdf5_root" >> $env:GITHUB_ENV
+
+      - name: Configure CMake
+        shell: bash
+        run: |
+          cmake -B build -S . \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/install \
+            -Dmcnptools.python=OFF \
+            -DBUILD_TESTING=OFF \
+            $([ -n "$HDF5_ROOT" ] && echo "-DHDF5_ROOT=$HDF5_ROOT" || true) \
+            $([ -n "$CMAKE_PREFIX_PATH" ] && echo "-DCMAKE_PREFIX_PATH=$CMAKE_PREFIX_PATH" || true) \
+            $([ "${{ matrix.os-tag }}" = 'macos-x86_64' ] && echo '-DCMAKE_OSX_ARCHITECTURES=x86_64' || true)
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Install
+        run: cmake --install build --prefix ${{ github.workspace }}/install --config Release
+
+      - name: Bundle shared libs (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get install -y patchelf
+          INSTALL_DIR="${{ github.workspace }}/install"
+          mkdir -p "$INSTALL_DIR/lib"
+          for bin in "$INSTALL_DIR/bin/"*; do
+            [ -f "$bin" ] && [ -x "$bin" ] || continue
+            ldd "$bin" | grep '=>' \
+              | grep -v -E 'linux-vdso|libpthread|libc\.so|libm\.so|libdl\.so|librt\.so|ld-linux|libstdc\+\+|libgcc_s|libz\.so' \
+              | awk '{print $3}' | grep '^/' \
+              | xargs -I{} cp -n {} "$INSTALL_DIR/lib/" 2>/dev/null || true
+            patchelf --set-rpath '$ORIGIN/../lib' "$bin"
+          done
+
+      - name: Bundle DLLs (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $hdf5_bin = "$env:CONDA\Library\bin"
+          $install_bin = "${{ github.workspace }}\install\bin"
+          Copy-Item "$hdf5_bin\hdf5*.dll" $install_bin
+          Copy-Item "$hdf5_bin\zlib*.dll" $install_bin -ErrorAction SilentlyContinue
+          Copy-Item "$hdf5_bin\szip*.dll" $install_bin -ErrorAction SilentlyContinue
+
+      - name: Bundle dylibs (macOS arm64)
+        if: matrix.os-tag == 'macos-arm64'
+        run: |
+          brew install dylibbundler
+          INSTALL_DIR="${{ github.workspace }}/install"
+          mkdir -p "$INSTALL_DIR/lib"
+          for bin in "$INSTALL_DIR/bin/"*; do
+            [ -f "$bin" ] && [ -x "$bin" ] && \
+              dylibbundler -od -b -x "$bin" -d "$INSTALL_DIR/lib/" \
+                -p @executable_path/../lib/ || true
+          done
+
+      - name: Bundle dylibs (macOS x86_64)
+        if: matrix.os-tag == 'macos-x86_64'
+        run: |
+          arch -x86_64 /usr/local/bin/brew install dylibbundler
+          INSTALL_DIR="${{ github.workspace }}/install"
+          mkdir -p "$INSTALL_DIR/lib"
+          for bin in "$INSTALL_DIR/bin/"*; do
+            [ -f "$bin" ] && [ -x "$bin" ] && \
+              arch -x86_64 /usr/local/bin/dylibbundler -od -b -x "$bin" \
+                -d "$INSTALL_DIR/lib/" -p @executable_path/../lib/ || true
+          done
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: mcnptools-${{ env.VERSION }}-${{ matrix.os-tag }}
+          path: install/
+
+  # ---------------------------------------------------------------------------
+  # Build Python wheels for each platform × Python version
+  # Both macOS architectures build on macos-latest; x86_64 uses a separate
+  # x86_64 Homebrew prefix and runs cmake under arch -x86_64 (Rosetta 2).
+  # ---------------------------------------------------------------------------
+  build-wheels:
+    name: Wheel / ${{ matrix.os-tag }} / Python ${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        # Linux and Windows use a cross-product; os-tag is injected via include.
+        os: [ubuntu-latest, windows-latest]
+        python-version: ['3.10', '3.11', '3.12', '3.13', '3.14']
+        include:
+          # os-tag for the cross-product entries
+          - os: ubuntu-latest
+            os-tag: linux-x86_64
+          - os: windows-latest
+            os-tag: windows-x86_64
+          # macOS arm64 (native)
+          - {os: macos-latest, python-version: '3.10', os-tag: macos-arm64}
+          - {os: macos-latest, python-version: '3.11', os-tag: macos-arm64}
+          - {os: macos-latest, python-version: '3.12', os-tag: macos-arm64}
+          - {os: macos-latest, python-version: '3.13', os-tag: macos-arm64}
+          - {os: macos-latest, python-version: '3.14', os-tag: macos-arm64}
+          # macOS x86_64 (x86_64 Homebrew + arch -x86_64 cmake on arm64 runner)
+          - {os: macos-latest, python-version: '3.10', os-tag: macos-x86_64, cmake-arch: x86_64}
+          - {os: macos-latest, python-version: '3.11', os-tag: macos-x86_64, cmake-arch: x86_64}
+          - {os: macos-latest, python-version: '3.12', os-tag: macos-x86_64, cmake-arch: x86_64}
+          - {os: macos-latest, python-version: '3.13', os-tag: macos-x86_64, cmake-arch: x86_64}
+          - {os: macos-latest, python-version: '3.14', os-tag: macos-x86_64, cmake-arch: x86_64}
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Get version
+        shell: bash
+        run: |
+          VERSION=$(grep -m1 'project(mcnptools VERSION' CMakeLists.txt \
+            | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install HDF5 (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libhdf5-dev
+
+      - name: Install HDF5 (macOS arm64)
+        if: matrix.os-tag == 'macos-arm64'
+        run: |
+          brew install hdf5
+          echo "HDF5_ROOT=$(brew --prefix hdf5)" >> $GITHUB_ENV
+
+      - name: Install HDF5 and libtiff (macOS x86_64)
+        if: matrix.os-tag == 'macos-x86_64'
+        run: |
+          arch -x86_64 /bin/bash -c \
+            "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+          arch -x86_64 /usr/local/bin/brew install hdf5 libtiff
+          echo "HDF5_ROOT=/usr/local/opt/hdf5" >> $GITHUB_ENV
+          echo "CMAKE_PREFIX_PATH=/usr/local" >> $GITHUB_ENV
+
+      - name: Install HDF5 (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          & "$env:CONDA\Scripts\conda.exe" install -y -c conda-forge hdf5
+          $hdf5_root = "$env:CONDA\Library" -replace '\\', '/'
+          echo "HDF5_ROOT=$hdf5_root" >> $env:GITHUB_ENV
+
+      - name: Install Python build tools
+        run: pip install --upgrade pip wheel setuptools
+
+      - name: Configure CMake
+        shell: bash
+        run: |
+          cmake -B build -S . \
+            -DCMAKE_BUILD_TYPE=Release \
+            -Dmcnptools.python=ON \
+            -DBUILD_TESTING=OFF \
+            "-DPython_EXECUTABLE=$(which python)" \
+            $([ -n "$HDF5_ROOT" ] && echo "-DHDF5_ROOT=$HDF5_ROOT" || true) \
+            $([ -n "$CMAKE_PREFIX_PATH" ] && echo "-DCMAKE_PREFIX_PATH=$CMAKE_PREFIX_PATH" || true) \
+            $([ "${{ matrix.os-tag }}" = 'macos-x86_64' ] && echo '-DCMAKE_OSX_ARCHITECTURES=x86_64' || true)
+
+      - name: Build Python extension
+        run: cmake --build build --config Release --target _mcnptools_wrap
+
+      - name: Build wheel
+        working-directory: build/python
+        env:
+          ARCHFLAGS: ${{ matrix.cmake-arch && format('-arch {0}', matrix.cmake-arch) || '' }}
+        run: python setupRelease.py bdist_wheel
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: wheel-${{ env.VERSION }}-py${{ matrix.python-version }}-${{ matrix.os-tag }}
+          path: build/python/dist/*.whl
+
+  # ---------------------------------------------------------------------------
+  # Publish executables and wheels to GitHub Releases on version tags
+  # ---------------------------------------------------------------------------
+  release:
+    name: Release
+    needs: [build-executables, build-wheels]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+
+    steps:
+      - name: Get version from tag
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_ENV
+
+      - uses: actions/download-artifact@v8
+        with:
+          path: artifacts/
+
+      - name: Create archives for executables
+        run: |
+          tar -czf mcnptools-${{ env.VERSION }}-linux-x86_64.tar.gz \
+            -C "$(ls -d artifacts/mcnptools-*-linux-x86_64)" .
+          tar -czf mcnptools-${{ env.VERSION }}-macos-arm64.tar.gz \
+            -C "$(ls -d artifacts/mcnptools-*-macos-arm64)" .
+          tar -czf mcnptools-${{ env.VERSION }}-macos-x86_64.tar.gz \
+            -C "$(ls -d artifacts/mcnptools-*-macos-x86_64)" .
+          cd "$(ls -d artifacts/mcnptools-*-windows-x86_64)"
+          zip -r ../../mcnptools-${{ env.VERSION }}-windows-x86_64.zip .
+
+      - name: Collect wheels
+        run: find artifacts/ -name '*.whl' -exec cp {} . \;
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            mcnptools-${{ env.VERSION }}-linux-x86_64.tar.gz
+            mcnptools-${{ env.VERSION }}-macos-arm64.tar.gz
+            mcnptools-${{ env.VERSION }}-macos-x86_64.tar.gz
+            mcnptools-${{ env.VERSION }}-windows-x86_64.zip
+            *.whl
