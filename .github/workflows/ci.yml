@@ -138,6 +138,74 @@ jobs:
                 -d "$INSTALL_DIR/lib/" -p @executable_path/../lib/ || true
           done
 
+      - name: Sign macOS binaries and libraries
+        if: runner.os == 'macOS'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_DEVELOPER_NAME: ${{ secrets.APPLE_DEVELOPER_NAME }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          if [ -z "$APPLE_CERTIFICATE" ]; then
+            echo "Skipping signing: APPLE_CERTIFICATE secret not set."
+            exit 0
+          fi
+          SIGN_IDENTITY="Developer ID Application: $APPLE_DEVELOPER_NAME ($APPLE_TEAM_ID)"
+          KEYCHAIN_PWD=$(openssl rand -hex 16)
+          KEYCHAIN_PATH=$RUNNER_TEMP/signing.keychain-db
+          echo "$APPLE_CERTIFICATE" | base64 --decode > $RUNNER_TEMP/cert.p12
+          security create-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN_PATH"
+          security import "$RUNNER_TEMP/cert.p12" -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple: -s \
+            -k "$KEYCHAIN_PWD" "$KEYCHAIN_PATH"
+
+          INSTALL_DIR="${{ github.workspace }}/install"
+
+          # Sign bundled dylibs first (must be signed before the executables
+          # that reference them)
+          find "$INSTALL_DIR/lib" -name "*.dylib" 2>/dev/null \
+            | while read -r lib; do
+                codesign --force --verify --verbose \
+                  --sign "$SIGN_IDENTITY" \
+                  --options runtime "$lib"
+              done
+
+          # Sign executables
+          for bin in "$INSTALL_DIR/bin/"*; do
+            [ -f "$bin" ] && [ -x "$bin" ] && \
+              codesign --force --verify --verbose \
+                --sign "$SIGN_IDENTITY" \
+                --options runtime "$bin"
+          done
+
+          security delete-keychain "$KEYCHAIN_PATH"
+          rm -f "$RUNNER_TEMP/cert.p12"
+
+      - name: Notarize macOS artifacts
+        if: runner.os == 'macOS'
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          if [ -z "$APPLE_ID" ]; then
+            echo "Skipping notarization: APPLE_ID secret not set."
+            exit 0
+          fi
+          INSTALL_DIR="${{ github.workspace }}/install"
+          NOTARIZE_ZIP=$RUNNER_TEMP/notarize-${{ matrix.os-tag }}.zip
+          ditto -c -k --keepParent "$INSTALL_DIR" "$NOTARIZE_ZIP"
+          xcrun notarytool submit "$NOTARIZE_ZIP" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+            --team-id  "$APPLE_TEAM_ID" \
+            --wait
+          rm -f "$NOTARIZE_ZIP"
+
       - uses: actions/upload-artifact@v7
         with:
           name: mcnptools-${{ env.VERSION }}-${{ matrix.os-tag }}
@@ -237,6 +305,43 @@ jobs:
 
       - name: Build Python extension
         run: cmake --build build --config Release --target _mcnptools_wrap
+
+      - name: Sign macOS Python extension
+        if: runner.os == 'macOS'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_DEVELOPER_NAME: ${{ secrets.APPLE_DEVELOPER_NAME }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          if [ -z "$APPLE_CERTIFICATE" ]; then
+            echo "Skipping signing: APPLE_CERTIFICATE secret not set."
+            exit 0
+          fi
+          SIGN_IDENTITY="Developer ID Application: $APPLE_DEVELOPER_NAME ($APPLE_TEAM_ID)"
+          KEYCHAIN_PWD=$(openssl rand -hex 16)
+          KEYCHAIN_PATH=$RUNNER_TEMP/signing.keychain-db
+          echo "$APPLE_CERTIFICATE" | base64 --decode > $RUNNER_TEMP/cert.p12
+          security create-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN_PATH"
+          security import "$RUNNER_TEMP/cert.p12" -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple: -s \
+            -k "$KEYCHAIN_PWD" "$KEYCHAIN_PATH"
+
+          # Sign all .so / .dylib files produced by the cmake build so they
+          # are signed before being packaged into the wheel.
+          find build \( -name "*.so" -o -name "*.dylib" \) 2>/dev/null \
+            | while read -r f; do
+                codesign --force --verify --verbose \
+                  --sign "$SIGN_IDENTITY" \
+                  --options runtime "$f"
+              done
+
+          security delete-keychain "$KEYCHAIN_PATH"
+          rm -f "$RUNNER_TEMP/cert.p12"
 
       - name: Build wheel
         working-directory: build/python
