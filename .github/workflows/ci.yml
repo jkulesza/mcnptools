@@ -11,6 +11,16 @@ env:
   # softprops/action-gh-release@v2 does not yet have a Node.js 24 release.
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
+# ── macOS code signing & notarization ────────────────────────────────────
+# Requires the following repository secrets:
+#   APPLE_CERTIFICATE             — base64-encoded Developer ID .p12
+#   APPLE_CERTIFICATE_PASSWORD    — export password for the .p12
+#   APPLE_DEVELOPER_NAME          — name exactly as shown in the certificate
+#                                   e.g. "John Doe"
+#   APPLE_TEAM_ID                 — 10-character Apple Team ID
+#   APPLE_ID                      — Apple ID email address
+#   APPLE_APP_SPECIFIC_PASSWORD   — app-specific password (appleid.apple.com)
+
 jobs:
   # ---------------------------------------------------------------------------
   # Build native executables for each platform
