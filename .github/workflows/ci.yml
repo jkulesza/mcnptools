@@ -375,6 +375,12 @@ jobs:
 
       - name: Create archives for executables
         run: |
+          # Restore executable bit lost by actions/upload-artifact
+          for platform in linux-x86_64 macos-arm64 macos-x86_64; do
+            dir="$(ls -d artifacts/mcnptools-*-${platform})"
+            [ -d "$dir/bin" ] && chmod +x "$dir/bin/"* || true
+          done
+
           tar -czf mcnptools-${{ env.VERSION }}-linux-x86_64.tar.gz \
             -C "$(ls -d artifacts/mcnptools-*-linux-x86_64)" .
           tar -czf mcnptools-${{ env.VERSION }}-macos-arm64.tar.gz \
