@@ -14,12 +14,15 @@ env:
 # ── macOS code signing & notarization ────────────────────────────────────
 # Requires the following repository secrets:
 #   APPLE_CERTIFICATE             — base64-encoded Developer ID .p12
+#                                   Generate with:
+#                                     base64 -i DeveloperID.p12 | pbcopy
 #   APPLE_CERTIFICATE_PASSWORD    — export password for the .p12
 #   APPLE_DEVELOPER_NAME          — name exactly as shown in the certificate
 #                                   e.g. "John Doe"
 #   APPLE_TEAM_ID                 — 10-character Apple Team ID
 #   APPLE_ID                      — Apple ID email address
-#   APPLE_APP_SPECIFIC_PASSWORD   — app-specific password (appleid.apple.com)
+#   APPLE_APP_SPECIFIC_PASSWORD   — app-specific password generated at
+#                                   accounts.apple.com, e.g. "1234-abcd-5678-efgh"
 
 jobs:
   # ---------------------------------------------------------------------------
