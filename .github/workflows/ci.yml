@@ -18,7 +18,7 @@ env:
 #                                     base64 -i DeveloperID.p12 | pbcopy
 #   APPLE_CERTIFICATE_PASSWORD    — export password for the .p12
 #   APPLE_DEVELOPER_NAME          — name exactly as shown in the certificate
-#                                   e.g. "John Doe"
+#                                   e.g. "John Doe" or "Organization Name"
 #   APPLE_TEAM_ID                 — 10-character Apple Team ID
 #   APPLE_ID                      — Apple ID email address
 #   APPLE_APP_SPECIFIC_PASSWORD   — app-specific password generated at
@@ -36,14 +36,14 @@ jobs:
       max-parallel: 2
       matrix:
         include:
-          # - os: ubuntu-latest
-          #   os-tag: linux-x86_64
+          - os: ubuntu-latest
+            os-tag: linux-x86_64
           - os: macos-latest
             os-tag: macos-arm64
           - os: macos-latest
             os-tag: macos-x86_64
-          # - os: windows-latest
-          #   os-tag: windows-x86_64
+          - os: windows-latest
+            os-tag: windows-x86_64
 
     steps:
       - uses: actions/checkout@v6
@@ -230,7 +230,6 @@ jobs:
   # x86_64 Homebrew prefix and runs cmake under arch -x86_64 (Rosetta 2).
   # ---------------------------------------------------------------------------
   build-wheels:
-    if: false
     name: Wheel / ${{ matrix.os-tag }} / Python ${{ matrix.python-version }}
     runs-on: ${{ matrix.os }}
     strategy:
