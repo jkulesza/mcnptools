@@ -302,7 +302,7 @@ jobs:
           echo "HDF5_ROOT=$hdf5_root" >> $env:GITHUB_ENV
 
       - name: Install Python build tools
-        run: pip install --upgrade pip wheel setuptools
+        run: python -m pip install --upgrade pip wheel setuptools
 
       - name: Configure CMake
         shell: bash
