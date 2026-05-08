@@ -27,10 +27,8 @@ env:
 jobs:
   # ---------------------------------------------------------------------------
   # Build native executables for each platform
-  # TEMPORARY: Disabled for Windows wheel DLL testing
   # ---------------------------------------------------------------------------
   build-executables:
-    if: false
     name: Executables / ${{ matrix.os-tag }}
     runs-on: ${{ matrix.os }}
     strategy:
@@ -238,30 +236,27 @@ jobs:
       fail-fast: false
       max-parallel: 4
       matrix:
-        # TEMPORARY: Only building Windows Python 3.14 for DLL bundling testing
-        # TEMPORARY: Commented out cross-product. Was:
-        #   os: [ubuntu-latest, windows-latest]
-        #   python-version: ['3.10', '3.11', '3.12', '3.13', '3.14']
+        # Linux and Windows use a cross-product; os-tag is injected via include.
+        os: [ubuntu-latest, windows-latest]
+        python-version: ['3.10', '3.11', '3.12', '3.13', '3.14']
         include:
-          # TEMPORARY: os-tag for the cross-product entries (commented out)
-          # - os: ubuntu-latest
-          #   os-tag: linux-x86_64
-          # TEMPORARY: Only Python 3.14 for Windows testing
+          # os-tag for the cross-product entries
+          - os: ubuntu-latest
+            os-tag: linux-x86_64
           - os: windows-latest
-            python-version: '3.14'
             os-tag: windows-x86_64
-          # TEMPORARY: macOS arm64 builds (commented out)
-          # - {os: macos-latest, python-version: '3.10', os-tag: macos-arm64}
-          # - {os: macos-latest, python-version: '3.11', os-tag: macos-arm64}
-          # - {os: macos-latest, python-version: '3.12', os-tag: macos-arm64}
-          # - {os: macos-latest, python-version: '3.13', os-tag: macos-arm64}
-          # - {os: macos-latest, python-version: '3.14', os-tag: macos-arm64}
-          # TEMPORARY: macOS x86_64 builds (commented out)
-          # - {os: macos-latest, python-version: '3.10', os-tag: macos-x86_64, cmake-arch: x86_64}
-          # - {os: macos-latest, python-version: '3.11', os-tag: macos-x86_64, cmake-arch: x86_64}
-          # - {os: macos-latest, python-version: '3.12', os-tag: macos-x86_64, cmake-arch: x86_64}
-          # - {os: macos-latest, python-version: '3.13', os-tag: macos-x86_64, cmake-arch: x86_64}
-          # - {os: macos-latest, python-version: '3.14', os-tag: macos-x86_64, cmake-arch: x86_64}
+          # macOS arm64 (native)
+          - {os: macos-latest, python-version: '3.10', os-tag: macos-arm64}
+          - {os: macos-latest, python-version: '3.11', os-tag: macos-arm64}
+          - {os: macos-latest, python-version: '3.12', os-tag: macos-arm64}
+          - {os: macos-latest, python-version: '3.13', os-tag: macos-arm64}
+          - {os: macos-latest, python-version: '3.14', os-tag: macos-arm64}
+          # macOS x86_64 (x86_64 Homebrew + arch -x86_64 cmake on arm64 runner)
+          - {os: macos-latest, python-version: '3.10', os-tag: macos-x86_64, cmake-arch: x86_64}
+          - {os: macos-latest, python-version: '3.11', os-tag: macos-x86_64, cmake-arch: x86_64}
+          - {os: macos-latest, python-version: '3.12', os-tag: macos-x86_64, cmake-arch: x86_64}
+          - {os: macos-latest, python-version: '3.13', os-tag: macos-x86_64, cmake-arch: x86_64}
+          - {os: macos-latest, python-version: '3.14', os-tag: macos-x86_64, cmake-arch: x86_64}
 
     steps:
       - uses: actions/checkout@v6
@@ -387,11 +382,10 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # Publish executables and wheels to GitHub Releases on version tags
-  # TEMPORARY: Only depends on build-wheels since executables are disabled
   # ---------------------------------------------------------------------------
   release:
     name: Release
-    needs: [build-wheels]
+    needs: [build-executables, build-wheels]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     permissions:
