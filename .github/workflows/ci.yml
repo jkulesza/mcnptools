@@ -239,14 +239,29 @@ jobs:
       max-parallel: 4
       matrix:
         # TEMPORARY: Only building Windows Python 3.14 for DLL bundling testing
-        # Disabled: Linux wheels, macOS wheels (all versions)
-        os: []
-        python-version: []
+        # TEMPORARY: Commented out cross-product. Was:
+        #   os: [ubuntu-latest, windows-latest]
+        #   python-version: ['3.10', '3.11', '3.12', '3.13', '3.14']
         include:
+          # TEMPORARY: os-tag for the cross-product entries (commented out)
+          # - os: ubuntu-latest
+          #   os-tag: linux-x86_64
           # TEMPORARY: Only Python 3.14 for Windows testing
           - os: windows-latest
             python-version: '3.14'
             os-tag: windows-x86_64
+          # TEMPORARY: macOS arm64 builds (commented out)
+          # - {os: macos-latest, python-version: '3.10', os-tag: macos-arm64}
+          # - {os: macos-latest, python-version: '3.11', os-tag: macos-arm64}
+          # - {os: macos-latest, python-version: '3.12', os-tag: macos-arm64}
+          # - {os: macos-latest, python-version: '3.13', os-tag: macos-arm64}
+          # - {os: macos-latest, python-version: '3.14', os-tag: macos-arm64}
+          # TEMPORARY: macOS x86_64 builds (commented out)
+          # - {os: macos-latest, python-version: '3.10', os-tag: macos-x86_64, cmake-arch: x86_64}
+          # - {os: macos-latest, python-version: '3.11', os-tag: macos-x86_64, cmake-arch: x86_64}
+          # - {os: macos-latest, python-version: '3.12', os-tag: macos-x86_64, cmake-arch: x86_64}
+          # - {os: macos-latest, python-version: '3.13', os-tag: macos-x86_64, cmake-arch: x86_64}
+          # - {os: macos-latest, python-version: '3.14', os-tag: macos-x86_64, cmake-arch: x86_64}
 
     steps:
       - uses: actions/checkout@v6
