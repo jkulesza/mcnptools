@@ -367,13 +367,9 @@ jobs:
         shell: pwsh
         run: |
           python -m pip install delvewheel
-          Write-Host "Wheels before repair:"
-          Get-ChildItem -Path build\python\dist\*.whl
           $wheel = Get-ChildItem -Path build\python\dist\*.whl | Select-Object -First 1
           Write-Host "Repairing wheel: $wheel"
           delvewheel repair --add-path "$env:CONDA\Library\bin" -w build\python\dist $wheel.FullName
-          Write-Host "Wheels after repair:"
-          Get-ChildItem -Path build\python\dist\*.whl
 
       - uses: actions/upload-artifact@v7
         with:
