@@ -237,13 +237,16 @@ jobs:
       max-parallel: 4
       matrix:
         # Linux and Windows use a cross-product; os-tag is injected via include.
-        os: [ubuntu-latest, windows-latest]
+        # TEMPORARY: Windows limited to 3.14 only for testing DLL bundling fix
+        os: [ubuntu-latest]
         python-version: ['3.10', '3.11', '3.12', '3.13', '3.14']
         include:
           # os-tag for the cross-product entries
           - os: ubuntu-latest
             os-tag: linux-x86_64
+          # TEMPORARY: Only Python 3.14 for Windows testing
           - os: windows-latest
+            python-version: '3.14'
             os-tag: windows-x86_64
           # macOS arm64 (native)
           - {os: macos-latest, python-version: '3.10', os-tag: macos-arm64}
@@ -361,6 +364,15 @@ jobs:
         env:
           ARCHFLAGS: ${{ matrix.cmake-arch && format('-arch {0}', matrix.cmake-arch) || '' }}
         run: python setupRelease.py bdist_wheel
+
+      - name: Repair Windows wheel with delvewheel
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          python -m pip install delvewheel
+          $wheel = Get-ChildItem -Path build\python\dist\*.whl | Select-Object -First 1
+          delvewheel repair --add-path "$env:CONDA\Library\bin" -w build\python\dist $wheel
+          Remove-Item $wheel
 
       - uses: actions/upload-artifact@v7
         with:
