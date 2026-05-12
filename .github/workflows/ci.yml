@@ -304,6 +304,18 @@ jobs:
       - name: Install Python build tools
         run: python -m pip install --upgrade pip wheel setuptools
 
+      - name: Set macOS deployment target and wheel platform (arm64)
+        if: matrix.os-tag == 'macos-arm64'
+        run: |
+          echo "MACOSX_DEPLOYMENT_TARGET=11.0" >> $GITHUB_ENV
+          echo "WHEEL_PLAT_NAME=macosx_11_0_arm64" >> $GITHUB_ENV
+
+      - name: Set macOS deployment target and wheel platform (x86_64)
+        if: matrix.os-tag == 'macos-x86_64'
+        run: |
+          echo "MACOSX_DEPLOYMENT_TARGET=10.13" >> $GITHUB_ENV
+          echo "WHEEL_PLAT_NAME=macosx_10_13_x86_64" >> $GITHUB_ENV
+
       - name: Configure CMake
         shell: bash
         run: |
@@ -314,7 +326,8 @@ jobs:
             "-DPython_EXECUTABLE=$(which python)" \
             $([ -n "$HDF5_ROOT" ] && echo "-DHDF5_ROOT=$HDF5_ROOT" || true) \
             $([ -n "$CMAKE_PREFIX_PATH" ] && echo "-DCMAKE_PREFIX_PATH=$CMAKE_PREFIX_PATH" || true) \
-            $([ "${{ matrix.os-tag }}" = 'macos-x86_64' ] && echo '-DCMAKE_OSX_ARCHITECTURES=x86_64' || true)
+            $([ "${{ matrix.os-tag }}" = 'macos-x86_64' ] && echo '-DCMAKE_OSX_ARCHITECTURES=x86_64' || true) \
+            $([ -n "$MACOSX_DEPLOYMENT_TARGET" ] && echo "-DCMAKE_OSX_DEPLOYMENT_TARGET=$MACOSX_DEPLOYMENT_TARGET" || true)
 
       - name: Build Python extension
         run: cmake --build build --config Release --target _mcnptools_wrap
@@ -360,7 +373,13 @@ jobs:
         working-directory: build/python
         env:
           ARCHFLAGS: ${{ matrix.cmake-arch && format('-arch {0}', matrix.cmake-arch) || '' }}
-        run: python setupRelease.py bdist_wheel
+        shell: bash
+        run: |
+          if [ -n "$WHEEL_PLAT_NAME" ]; then
+            python setupRelease.py bdist_wheel --plat-name "$WHEEL_PLAT_NAME"
+          else
+            python setupRelease.py bdist_wheel
+          fi
 
       - name: Repair Windows wheel with delvewheel
         if: runner.os == 'Windows'
