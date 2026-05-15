@@ -83,6 +83,7 @@ jobs:
           & "$env:CONDA\Scripts\conda.exe" install -y -c conda-forge hdf5 libtiff
           $hdf5_root = "$env:CONDA\Library" -replace '\\', '/'
           echo "HDF5_ROOT=$hdf5_root" >> $env:GITHUB_ENV
+          echo "CMAKE_PREFIX_PATH=$hdf5_root" >> $env:GITHUB_ENV
 
       - name: Configure CMake
         shell: bash
@@ -126,6 +127,10 @@ jobs:
           Copy-Item "$hdf5_bin\hdf5*.dll" $install_bin
           Copy-Item "$hdf5_bin\zlib*.dll" $install_bin -ErrorAction SilentlyContinue
           Copy-Item "$hdf5_bin\szip*.dll" $install_bin -ErrorAction SilentlyContinue
+          Copy-Item "$hdf5_bin\tiff*.dll" $install_bin -ErrorAction SilentlyContinue
+          Copy-Item "$hdf5_bin\jpeg*.dll" $install_bin -ErrorAction SilentlyContinue
+          Copy-Item "$hdf5_bin\lzma*.dll" $install_bin -ErrorAction SilentlyContinue
+          Copy-Item "$hdf5_bin\zstd*.dll" $install_bin -ErrorAction SilentlyContinue
 
       - name: Bundle dylibs (macOS arm64)
         if: matrix.os-tag == 'macos-arm64'
@@ -311,6 +316,7 @@ jobs:
           & "$env:CONDA\Scripts\conda.exe" install -y -c conda-forge hdf5 libtiff
           $hdf5_root = "$env:CONDA\Library" -replace '\\', '/'
           echo "HDF5_ROOT=$hdf5_root" >> $env:GITHUB_ENV
+          echo "CMAKE_PREFIX_PATH=$hdf5_root" >> $env:GITHUB_ENV
 
       - name: Install Python build tools
         run: python -m pip install --upgrade pip wheel setuptools
