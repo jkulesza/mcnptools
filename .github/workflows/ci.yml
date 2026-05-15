@@ -61,10 +61,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libhdf5-dev
 
-      - name: Install HDF5 (macOS arm64)
+      - name: Install HDF5 and libtiff (macOS arm64)
         if: matrix.os-tag == 'macos-arm64'
         run: |
-          brew install hdf5
+          brew install hdf5 libtiff
           echo "HDF5_ROOT=$(brew --prefix hdf5)" >> $GITHUB_ENV
 
       - name: Install HDF5 and libtiff (macOS x86_64)
@@ -278,10 +278,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libhdf5-dev
 
-      - name: Install HDF5 (macOS arm64)
+      - name: Install HDF5 and libtiff (macOS arm64)
         if: matrix.os-tag == 'macos-arm64'
         run: |
-          brew install hdf5
+          brew install hdf5 libtiff
           echo "HDF5_ROOT=$(brew --prefix hdf5)" >> $GITHUB_ENV
 
       - name: Install HDF5 and libtiff (macOS x86_64)
