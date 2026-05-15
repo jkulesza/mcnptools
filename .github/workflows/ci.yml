@@ -135,7 +135,7 @@ jobs:
           mkdir -p "$INSTALL_DIR/lib"
           for bin in "$INSTALL_DIR/bin/"*; do
             [ -f "$bin" ] && [ -x "$bin" ] && \
-              dylibbundler -od -b -x "$bin" -d "$INSTALL_DIR/lib/" \
+              dylibbundler -of -b -x "$bin" -d "$INSTALL_DIR/lib/" \
                 -p @executable_path/../lib/ || true
           done
 
@@ -147,7 +147,7 @@ jobs:
           mkdir -p "$INSTALL_DIR/lib"
           for bin in "$INSTALL_DIR/bin/"*; do
             [ -f "$bin" ] && [ -x "$bin" ] && \
-              arch -x86_64 /usr/local/bin/dylibbundler -od -b -x "$bin" \
+              arch -x86_64 /usr/local/bin/dylibbundler -of -b -x "$bin" \
                 -d "$INSTALL_DIR/lib/" -p @executable_path/../lib/ || true
           done
 
