@@ -151,6 +151,15 @@ jobs:
                 -d "$INSTALL_DIR/lib/" -p @executable_path/../lib/ || true
           done
 
+      - name: List bundled libraries (debug)
+        if: runner.os == 'macOS'
+        run: |
+          INSTALL_DIR="${{ github.workspace }}/install"
+          echo "=== Contents of $INSTALL_DIR/lib ==="
+          ls -lah "$INSTALL_DIR/lib/" || echo "lib directory not found"
+          echo "=== Finding .dylib files ==="
+          find "$INSTALL_DIR/lib" -name "*.dylib" 2>/dev/null || echo "No dylib files found"
+
       - name: Sign macOS binaries and libraries
         if: runner.os == 'macOS'
         env:
@@ -229,7 +238,9 @@ jobs:
   # Both macOS architectures build on macos-latest; x86_64 uses a separate
   # x86_64 Homebrew prefix and runs cmake under arch -x86_64 (Rosetta 2).
   # ---------------------------------------------------------------------------
+  # TEMPORARILY DISABLED FOR CI TESTING
   build-wheels:
+    if: false
     name: Wheel / ${{ matrix.os-tag }} / Python ${{ matrix.python-version }}
     runs-on: ${{ matrix.os }}
     strategy:
