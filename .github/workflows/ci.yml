@@ -131,6 +131,9 @@ jobs:
           Copy-Item "$hdf5_bin\jpeg*.dll" $install_bin -ErrorAction SilentlyContinue
           Copy-Item "$hdf5_bin\lzma*.dll" $install_bin -ErrorAction SilentlyContinue
           Copy-Item "$hdf5_bin\zstd*.dll" $install_bin -ErrorAction SilentlyContinue
+          Copy-Item "$hdf5_bin\deflate*.dll" $install_bin -ErrorAction SilentlyContinue
+          Copy-Item "$hdf5_bin\Lerc*.dll" $install_bin -ErrorAction SilentlyContinue
+          Copy-Item "$hdf5_bin\liblzma*.dll" $install_bin -ErrorAction SilentlyContinue
 
       - name: Bundle dylibs (macOS arm64)
         if: matrix.os-tag == 'macos-arm64'
